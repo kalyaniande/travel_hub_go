@@ -5,6 +5,7 @@ import (
 	"errors"
 	_ "fmt"
 	"log"
+	"encoding/json"
 )
 
 type Agent struct {
@@ -54,23 +55,62 @@ func GetAgentInfo(api_key string) (Agent, error) {
 		return Agent{}, err
 	}
 	defer aredis.DredisPool.Put(conn)
-	result, err := conn.Cmd("ZRANGEBYLEX", "[m]agent", "["+api_key+"\t", "["+api_key+"\t\xff", "LIMIT", 0, 1).Map()
+
+	result, err := conn.Cmd("HGET", "agent", api_key).Str()
 
 	if err != nil {
-		log.Fatal(err)
 		return Agent{}, err
-	} else if len(result) == 0 {
-
+	} else if result == "" {
 		return Agent{}, ErrNoAgent
 	}
-	return Agent{}, nil
+	agent := Agent{}
+	json.Unmarshal([]byte(result), &agent)
+
+	return agent, nil
 }
 
-func PutAgentInfo(api_key string, data map[string]string) {
+func PutAgentInfo(api_key string, data Agent) error {
 	conn, err := aredis.DredisPool.Get()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer aredis.DredisPool.Put(conn)
-	conn.Cmd("ZADD", "[m]agent", 0, api_key)
+
+	json_data, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	resp := conn.Cmd("HSET", "agent", api_key, json_data)
+        if resp.Err != nil {
+		return resp.Err
+	}
+	return nil
+}
+
+func DeleteAgentInfo(api_key string) error {
+	conn, err := aredis.DredisPool.Get()
+	if err != nil {
+		return err
+	}
+	defer aredis.DredisPool.Put(conn)
+
+	resp := conn.Cmd("HDEL", "agent", api_key)
+	if resp.Err != nil {
+		return resp.Err
+	}
+	return nil
+}
+
+func DeleteAllAgentsInfo() error {
+	conn, err := aredis.DredisPool.Get()
+	if err != nil {
+		return err
+	}
+	defer aredis.DredisPool.Put(conn)
+
+	resp := conn.Cmd("DEL", "agent")
+	if resp.Err != nil {
+		return resp.Err
+	}
+	return nil
 }
